@@ -1,17 +1,12 @@
-import streamlit as st
-from your_file_name import generate_interview_response   # replace with your actual filename
+import gradio as gr
+from main import generate_interview_response
 
-st.set_page_config(page_title="Placement Prep Assistant", layout="centered")
+iface = gr.Interface(
+    fn=generate_interview_response,
+    inputs=gr.Textbox(label="Enter your Query", placeholder="e.g., Infosys Python Developer interview questions", lines=2),
+    outputs=gr.Textbox(label="Generated Interview Questions", lines=30, show_copy_button=True),
+    title="AI Placement Interview Assistant",
+    description="Generates interview questions and short answers using RAG."
+)
 
-st.title("🎯 AI Placement Preparation Assistant")
-
-query = st.text_input("Enter your Query", placeholder="e.g., Interview questions for Infosys Python Developer")
-
-if st.button("Generate"):
-    if query.strip() == "":
-        st.error("Please enter a query.")
-    else:
-        with st.spinner("Thinking..."):
-            answer = generate_interview_response(query)
-        st.write("### ✅ Response")
-        st.write(answer)
+iface.launch(server_name="0.0.0.0", server_port=7860, share=False)
