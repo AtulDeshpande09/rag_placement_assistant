@@ -29,32 +29,29 @@ embedding_function = SentenceTransformer("./models/embeddings")
 db = Chroma(persist_directory = CHROMA_PATH,
             embedding_function= embedding_function)
 
-if __name__ == '__main__':
 
-
-    query_text = input("Enter You Query : ")
-
+def generate_interview_response(query_text):
+    # Retrieve context
     results = db.similarity_search_with_score(query_text, k=3)
-
+    context_text = "\n\n---\n\n".join([doc.page_content for doc,_score in results])
 
     PROMPT_TEMPLATE = """
-    Answer the question based only on the following context : {context}
-    
+    Answer the question based only on the following context:
+
+    {context}
+
     ---
-    Answer the question based on the above context : {query}
+    Now answer the user query:
+
+    {query}
     """
 
-    # Actual Prompt
-    context_text = "\n\n---\n\n".join([doc.page_content for doc,_score in results])
-    prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-    prompt = prompt_template.format(context = context_text, query = query_text)
-    # model 
+    prompt = PROMPT_TEMPLATE.format(context=context_text, query=query_text)
 
-    model = "some model"
+    # Generate answer using your text-generation pipeline
+    response = pipe(prompt, max_new_tokens=300, do_sample=True, temperature=0.3)[0]["generated_text"]
 
-    response_text = model.predict(prompt)
+    sources = [doc.metadata.get("source", "Unknown") for doc, _score in results]
 
-    sources = [doc.metadata.get("Source",None) for doc, _score in results]
-    
-    final_response = f"Response : {response_text} \nSource : {sources}"
-    print("Done!!!")
+    final_response = f"{response}\n\nSources: {sources}"
+    return final_response
