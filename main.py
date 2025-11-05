@@ -2,14 +2,40 @@
 from langchain_chroma import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline , BitsAndBytesConfig
+from sentence_transformers import SentenceTransformer
+import torch
 
+class LocalEmbeddings:
+    def __init__(self, model_path="./models/embeddings"):
+        self.model = SentenceTransformer(model_path)
+
+    def embed_documents(self, texts):
+        return self.model.encode(texts, show_progress_bar=False).tolist()
+
+    def embed_query(self, text):
+        return self.model.encode([text], show_progress_bar=False)[0].tolist()
+
+embeddings = LocalEmbeddings("./models/embeddings")
+
+
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,                # 4-bit quantization
+    bnb_4bit_use_double_quant=True,   # double quantization for extra compression
+    bnb_4bit_quant_type="nf4",        # better precision scheme
+    bnb_4bit_compute_dtype=torch.float16
+)
 
 # Loading model
 model_name = "./models/phi_mini" 
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name, device_map="cuda" )
+
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    device_map="auto",                # automatically assign GPU/CPU
+    quantization_config=bnb_config,
+)
 
 pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
 
@@ -18,16 +44,9 @@ pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
 
 CHROMA_PATH = "chroma"
 
-"""
-embedding_function = HuggingFaceEmbeddings(
-    model_name="./models/embeddings"
-)
-"""
-
-embedding_function = SentenceTransformer("./models/embeddings")
-
 db = Chroma(persist_directory = CHROMA_PATH,
-            embedding_function= embedding_function)
+            embedding_function= embeddings)
+
 
 PROMPT_TEMPLATE = """
 You are an AI assistant that generates **interview preparation material**.
