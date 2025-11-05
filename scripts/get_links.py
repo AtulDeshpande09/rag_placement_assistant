@@ -9,7 +9,7 @@ def search_web(query,location="India",num=10):
             'google_domain' : 'google.com',
             'num': num,
             'output' : json,
-            'api_key': "API_KEY"
+            'api_key': ""
             }
 
     search = GoogleSearch(params)
