@@ -7,4 +7,4 @@ sentence_transformers
 accelerate
 transformers
 bitsandbytes
-streamlit
+gradio

@@ -49,37 +49,33 @@ db = Chroma(persist_directory = CHROMA_PATH,
 
 
 PROMPT_TEMPLATE = """
-You are an AI assistant that generates **interview preparation material**.
+You are an AI assistant that generates company & role specific interview preparation questions.
 
-Use ONLY the following retrieved context when generating your answer:
+Use ONLY the following context when generating your answers:
 
 {context}
 
 ---
 
 **Task:**  
-Based on the context, generate a list of **10 to 20 interview questions** that are **relevant to the role and company** described in the user query below.
+Generate **20 interview questions** relevant to the role and company described in the user query below.
 
-- Each question should be **concise and realistic**.
-- If answers are clearly found in the context, provide **short precise answers (1-3 sentences max)** below each question.
-- If an answer is **not clearly present** in the context, **do NOT invent or assume**. Instead, write:  
-  `_No reliable answer in context_`
+- Write the output in the format:
+Q1: <question>
+A1: <very short answer or "_Not available in context_">
+
+- Keep questions clear and realistic.
+- If the answer is not found in the context, write: _Not available in context_
+- DO NOT stop mid-response.
+- DO NOT add extra commentary.
 
 ---
 
-**User Query:**  
-{query}
+User Query: {query}
 
-Now produce the final output in the following structured format:
-
-Q1: <question>  
-A1: <answer or _No reliable answer in context_>
-
-Q2: <question>  
-A2: <answer>
-
-...
+Now produce the final output:
 """
+
 
 
 def generate_interview_response(query_text):
@@ -90,9 +86,16 @@ def generate_interview_response(query_text):
     prompt = PROMPT_TEMPLATE.format(context=context_text, query=query_text)
 
     # Generate answer using your text-generation pipeline
-    response = pipe(prompt, max_new_tokens=300, do_sample=True, temperature=0.3)[0]["generated_text"]
+    response = pipe(
+        prompt,
+        max_new_tokens=600,       # increased
+        do_sample=True,
+        temperature=0.3,          # keeps answers focused
+        top_p=0.9,
+        repetition_penalty=1.1
+        )[0]["generated_text"]
 
     sources = [doc.metadata.get("source", "Unknown") for doc, _score in results]
 
-    final_response = f"{response}\n\nSources: {sources}"
+    final_response = f"{response}"
     return final_response
