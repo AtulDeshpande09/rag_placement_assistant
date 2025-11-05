@@ -29,22 +29,44 @@ embedding_function = SentenceTransformer("./models/embeddings")
 db = Chroma(persist_directory = CHROMA_PATH,
             embedding_function= embedding_function)
 
+PROMPT_TEMPLATE = """
+You are an AI assistant that generates **interview preparation material**.
+
+Use ONLY the following retrieved context when generating your answer:
+
+{context}
+
+---
+
+**Task:**  
+Based on the context, generate a list of **10 to 20 interview questions** that are **relevant to the role and company** described in the user query below.
+
+- Each question should be **concise and realistic**.
+- If answers are clearly found in the context, provide **short precise answers (1-3 sentences max)** below each question.
+- If an answer is **not clearly present** in the context, **do NOT invent or assume**. Instead, write:  
+  `_No reliable answer in context_`
+
+---
+
+**User Query:**  
+{query}
+
+Now produce the final output in the following structured format:
+
+Q1: <question>  
+A1: <answer or _No reliable answer in context_>
+
+Q2: <question>  
+A2: <answer>
+
+...
+"""
+
 
 def generate_interview_response(query_text):
     # Retrieve context
     results = db.similarity_search_with_score(query_text, k=3)
     context_text = "\n\n---\n\n".join([doc.page_content for doc,_score in results])
-
-    PROMPT_TEMPLATE = """
-    Answer the question based only on the following context:
-
-    {context}
-
-    ---
-    Now answer the user query:
-
-    {query}
-    """
 
     prompt = PROMPT_TEMPLATE.format(context=context_text, query=query_text)
 
