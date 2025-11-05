@@ -1,4 +1,5 @@
-from serpapi imort GoogleSearch
+from serpapi import GoogleSearch
+import json
 
 def search_web(query,location="India",num=10):
 
@@ -11,15 +12,17 @@ def search_web(query,location="India",num=10):
             'api_key': "API_KEY"
             }
 
-    search = GoogleSearch(params):
+    search = GoogleSearch(params)
     results = search.get_dict()
     return results
 
 
-def get_links(page:dict):
+def get_links(results:dict):
     
     links = []
-
+    for result in results:
+        link = result["link"]
+        links.append(link)
 
     return links
 
@@ -28,6 +31,18 @@ def get_links(page:dict):
 def combine(query):
 
     page = search_web()
+    page = page["organic_results"]
     links = get_links(page)
 
-    return links
+    return link
+
+
+if __name__ == '__main__':
+
+    query = "Interview questions for python developer"
+
+    result = search_web(query)
+    
+    data = result["organic_results"]
+    link = get_links(data)
+    print(link)
