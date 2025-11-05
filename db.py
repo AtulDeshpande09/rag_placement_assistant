@@ -2,11 +2,23 @@ from langchain_community.document_loaders import DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
-
+from sentence_transformers import SentenceTransformer
 
 DATAPATH = "data/"
 DBPATH = "chroma"
 
+# embedding function
+class LocalEmbeddings:
+    def __init__(self, model_path="./models/embeddings"):
+        self.model = SentenceTransformer(model_path)
+
+    def embed_documents(self, texts):
+        return self.model.encode(texts, show_progress_bar=False).tolist()
+
+    def embed_query(self, text):
+        return self.model.encode([text], show_progress_bar=False)[0].tolist()
+
+embeddings = LocalEmbeddings("./models/embeddings")
 
 ### Load documents 
 def load_documents(DATAPATH=DATAPATH):
@@ -38,12 +50,11 @@ if __name__ == "__main__":
     print("Docs divided into chunks")
     
 
-    embedding_function = SentenceTransformer("./models/embeddings")
 
     db = Chroma.from_documents(
             chunks,
-            embedding_function,
+            embeddings,
             persist_directory = DBPATH
             )
-    db.persist()
+    
     print(f"Vector DB created and saved at {DBPATH}")
