@@ -1,8 +1,7 @@
 # all the imports
 from langchain_chroma import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_core.prompts import ChatPromptTemplate
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from sentence_transformers import SentenceTransformer
 import torch
 
@@ -19,49 +18,61 @@ class LocalEmbeddings:
 embeddings = LocalEmbeddings("./models/embeddings")
 
 bnb_config = BitsAndBytesConfig(
-    load_in_4bit=True,                # 4-bit quantization
-    bnb_4bit_use_double_quant=True,   # double quantization for extra compression
-    bnb_4bit_quant_type="nf4",        # better precision scheme
+    load_in_4bit=True,
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4",
     bnb_4bit_compute_dtype=torch.float16
 )
 
-# Loading model - UPDATED TO MISTRAL
+# Loading model - MISTRAL 7B INSTRUCT
 model_name = "./models/mistral_7b_instruct" 
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
+# Ensure pad token is set (Mistral sometimes lacks it, which causes warnings/errors in batch generation)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
 
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    device_map="auto",                # automatically assign GPU/CPU
+    device_map="auto",
     quantization_config=bnb_config,
 )
-
-pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
 
 # load vector DB
 CHROMA_PATH = "chroma"
 db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
 
+# --- OPTIMIZED PROMPT TEMPLATE ---
+# We use a System message to set strict behavioral rules for Mistral
+SYSTEM_PROMPT = """You are an expert technical interviewer and AI assistant. 
+Your task is to generate highly relevant, company-specific, and role-specific interview questions based strictly on the provided context."""
+
 PROMPT_TEMPLATE = """
-You are an AI assistant that generates company & role specific interview preparation questions.
+Use ONLY the following context to generate your answers. Do not use outside knowledge.
 
-Use ONLY the following context when generating your answers:
-
+<context>
 {context}
+</context>
 
 ---
 
 **Task:**  
-Generate **20 interview questions** relevant to the role and company described in the user query below.
+Generate exactly **20 interview questions** relevant to the role and company described in the user query below.
 
-- Write the output in the format:
-Q1: <question>
-A1: <very short answer or "_Not available in context_">
+**Output Format:**
+You must strictly follow this format for every single question:
+Q1: [Question text]
+A1: [Very short answer based on context, or "_Not available in context_"]
+Q2: [Question text]
+A2: [Very short answer based on context, or "_Not available in context_"]
+...and so on up to Q20.
 
-- Keep questions clear and realistic.
-- If the answer is not found in the context, write: _Not available in context_
-- DO NOT stop mid-response.
-- DO NOT add extra commentary.
+**CRITICAL RULES:**
+1. DO NOT output any introductory text (e.g., "Here are the questions:"). Start immediately with "Q1:".
+2. DO NOT output any concluding text or commentary at the end.
+3. DO NOT use markdown formatting (no **bold**, no # headers, no bullet points). Use plain text only.
+4. If the answer is not found in the context, the answer MUST be exactly: _Not available in context_
+5. Keep questions clear, realistic, and professional.
 
 ---
 
@@ -71,32 +82,52 @@ Now produce the final output:
 """
 
 def generate_interview_response(query_text):
-    # Retrieve context
+    # 1. Retrieve context
     results = db.similarity_search_with_score(query_text, k=3)
     context_text = "\n\n---\n\n".join([doc.page_content for doc, _score in results])
 
-    prompt = PROMPT_TEMPLATE.format(context=context_text, query=query_text)
+    # If context is empty, handle it gracefully
+    if not context_text.strip():
+        return "No relevant context found in the database for this query."
 
-    # 1. Format the prompt using Mistral's specific chat template
-    messages = [{"role": "user", "content": prompt}]
+    user_prompt = PROMPT_TEMPLATE.format(context=context_text, query=query_text)
+
+    # 2. Format the prompt using Mistral's specific chat template (System + User)
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt}
+    ]
+    
     formatted_prompt = tokenizer.apply_chat_template(
         messages, 
         tokenize=False, 
         add_generation_prompt=True
     )
 
-    # 2. Generate answer using your text-generation pipeline
-    response = pipe(
-        formatted_prompt,
-        max_new_tokens=1500,       # Increased to ensure all 20 Q&As are generated without cutting off
-        do_sample=True,
-        temperature=0.3,           # keeps answers focused
-        top_p=0.9,
-        repetition_penalty=1.1,
-        return_full_text=False     # Crucial: prevents echoing the prompt back in the response
-    )[0]["generated_text"]
+    # 3. Tokenize inputs for direct torch generation
+    inputs = tokenizer(formatted_prompt, return_tensors="pt", padding=True, truncation=True).to(model.device)
 
-    sources = [doc.metadata.get("source", "Unknown") for doc, _score in results]
+    # 4. Generate answer using direct torch generation
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=1500,       # Sufficient for 20 Q&As
+            do_sample=True,
+            temperature=0.15,          # Lowered for strict formatting and factual accuracy
+            top_p=0.85,
+            repetition_penalty=1.15,   # Increased to prevent looping
+            eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+            # Optional: Uncomment to see generation token-by-token in Colab console
+            # streamer=TextStreamer(tokenizer, skip_prompt=True), 
+        )
 
-    final_response = f"{response}"
-    return final_response
+    # 5. Decode ONLY the newly generated tokens (skip the prompt)
+    generated_tokens = outputs[0][inputs.input_ids.shape[1]:]
+    response = tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+
+    # Basic cleanup in case the model still adds a tiny bit of conversational filler
+    if response.lower().startswith("here are"):
+        response = response.split(":", 1)[-1].strip()
+        
+    return response
