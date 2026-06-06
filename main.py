@@ -2,7 +2,7 @@
 from langchain_chroma import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline , BitsAndBytesConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
 from sentence_transformers import SentenceTransformer
 import torch
 
@@ -18,7 +18,6 @@ class LocalEmbeddings:
 
 embeddings = LocalEmbeddings("./models/embeddings")
 
-
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,                # 4-bit quantization
     bnb_4bit_use_double_quant=True,   # double quantization for extra compression
@@ -26,8 +25,8 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_compute_dtype=torch.float16
 )
 
-# Loading model
-model_name = "./models/phi_mini" 
+# Loading model - UPDATED TO MISTRAL
+model_name = "./models/mistral_7b_instruct" 
 
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
@@ -39,14 +38,9 @@ model = AutoModelForCausalLM.from_pretrained(
 
 pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
 
-
 # load vector DB
-
 CHROMA_PATH = "chroma"
-
-db = Chroma(persist_directory = CHROMA_PATH,
-            embedding_function= embeddings)
-
+db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
 
 PROMPT_TEMPLATE = """
 You are an AI assistant that generates company & role specific interview preparation questions.
@@ -76,24 +70,31 @@ User Query: {query}
 Now produce the final output:
 """
 
-
-
 def generate_interview_response(query_text):
     # Retrieve context
     results = db.similarity_search_with_score(query_text, k=3)
-    context_text = "\n\n---\n\n".join([doc.page_content for doc,_score in results])
+    context_text = "\n\n---\n\n".join([doc.page_content for doc, _score in results])
 
     prompt = PROMPT_TEMPLATE.format(context=context_text, query=query_text)
 
-    # Generate answer using your text-generation pipeline
+    # 1. Format the prompt using Mistral's specific chat template
+    messages = [{"role": "user", "content": prompt}]
+    formatted_prompt = tokenizer.apply_chat_template(
+        messages, 
+        tokenize=False, 
+        add_generation_prompt=True
+    )
+
+    # 2. Generate answer using your text-generation pipeline
     response = pipe(
-        prompt,
-        max_new_tokens=600,       # increased
+        formatted_prompt,
+        max_new_tokens=1500,       # Increased to ensure all 20 Q&As are generated without cutting off
         do_sample=True,
-        temperature=0.3,          # keeps answers focused
+        temperature=0.3,           # keeps answers focused
         top_p=0.9,
-        repetition_penalty=1.1
-        )[0]["generated_text"]
+        repetition_penalty=1.1,
+        return_full_text=False     # Crucial: prevents echoing the prompt back in the response
+    )[0]["generated_text"]
 
     sources = [doc.metadata.get("source", "Unknown") for doc, _score in results]
 
