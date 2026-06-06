@@ -26,7 +26,7 @@ This project is a Retrieval-Augmented Generation (RAG) based system that generat
 | Embeddings          | SentenceTransformer                         |
 | Vector Store        | ChromaDB                                    |
 | Retrieval Framework | LangChain                                   |
-| Language Model      | Phi Mini (local)                            |
+| Language Model      | Mistral 7b Instruct                         |
 | UI                  | Gradio                                      |
 | Environment         | Python, GPU backend (Vast.ai or local CUDA) |
 
@@ -42,7 +42,7 @@ pip install -r requirements.txt
 
 ```
 models/
- ├── phi_mini/                  # LLM directory
+ ├── mistral_7b_instruct/                  # LLM directory
  └── embeddings/                # SentenceTransformer embedding model
 ```
 
@@ -71,19 +71,12 @@ http://<instance-ip>:<public-port>
 ```
 project/
  ├── models/
- │   ├── phi_mini/
+ │   ├── mistral_7b_instruct/
  │   └── embeddings/
  ├── chroma/                       # Vector DB storage
- ├── gradio_ui.py                  # Gradio interface
- ├── rag_pipeline.py               # Retrieval and generation logic
+ ├── ui.py                  # Gradio interface
+ ├── main.py               # Retrieval and generation logic
  ├── README.md
  └── requirements.txt
 ```
-
-## Future Enhancements
-
-* Add aptitude and HR question modules.
-* Add role-wise dataset expansion.
-* Improve UI layout and presentation styling.
-* Optional web deployment and user authentication.
 
